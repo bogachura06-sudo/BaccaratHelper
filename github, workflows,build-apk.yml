@@ -1,0 +1,226 @@
+package com.example.baccarathelper;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.os.Bundle;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.*;
+import java.util.ArrayList;
+import java.util.Locale;
+
+public class MainActivity extends Activity {
+    private static final int BG = Color.rgb(14, 29, 26);
+    private static final int PANEL = Color.rgb(27, 48, 43);
+    private static final int GOLD = Color.rgb(231, 190, 92);
+    private static final int WHITE = Color.rgb(247, 245, 236);
+    private double balance = 10000;
+    private double pendingBet = 0;
+    private String selectedBet = "";
+    private final ArrayList<String> history = new ArrayList<>();
+    private TextView balanceView, recommendationView, statsView, historyView, statusView;
+    private EditText amountInput;
+
+    @Override public void onCreate(Bundle state) {
+        super.onCreate(state);
+        render();
+    }
+
+    private int dp(float value) { return (int)(value * getResources().getDisplayMetrics().density + 0.5f); }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return t;
+    }
+
+    private LinearLayout column() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(dp(18), dp(12), dp(18), dp(20));
+        l.setBackgroundColor(BG);
+        return l;
+    }
+
+    private TextView button(String label, int color, Runnable action) {
+        TextView b = text(label, 16, Color.WHITE, true);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(10), dp(13), dp(10), dp(13));
+        b.setBackgroundColor(color);
+        b.setOnClickListener(v -> action.run());
+        return b;
+    }
+
+    private void addGap(LinearLayout root, int h) {
+        View gap = new View(this);
+        root.addView(gap, new LinearLayout.LayoutParams(1, dp(h)));
+    }
+
+    private void render() {
+        LinearLayout root = column();
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(root);
+
+        TextView title = text("BACCARAT", 25, GOLD, true);
+        title.setGravity(Gravity.CENTER);
+        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        TextView subtitle = text("ПОМОЩНИК • ДЕМО-ВЕРСИЯ", 12, WHITE, false);
+        subtitle.setGravity(Gravity.CENTER);
+        root.addView(subtitle);
+        addGap(root, 14);
+
+        LinearLayout balancePanel = column();
+        balancePanel.setBackgroundColor(PANEL);
+        balanceView = text("Баланс: " + money(balance), 24, GOLD, true);
+        balanceView.setGravity(Gravity.CENTER);
+        balancePanel.addView(balanceView);
+        root.addView(balancePanel);
+        addGap(root, 14);
+
+        root.addView(text("Ставка на следующую раздачу", 18, WHITE, true));
+        addGap(root, 6);
+        amountInput = new EditText(this);
+        amountInput.setSingleLine(true);
+        amountInput.setHint("Сумма, например 100");
+        amountInput.setInputType(2 | 8192);
+        amountInput.setTextColor(WHITE);
+        amountInput.setHintTextColor(Color.LTGRAY);
+        amountInput.setPadding(dp(12), dp(8), dp(12), dp(8));
+        amountInput.setBackgroundColor(PANEL);
+        root.addView(amountInput, new LinearLayout.LayoutParams(-1, dp(52)));
+        addGap(root, 8);
+
+        LinearLayout choices = new LinearLayout(this);
+        choices.setOrientation(LinearLayout.HORIZONTAL);
+        TextView player = button("ИГРОК", Color.rgb(45, 91, 139), () -> choose("Игрок"));
+        TextView banker = button("БАНКИР", Color.rgb(151, 56, 55), () -> choose("Банкир"));
+        TextView tie = button("НИЧЬЯ", Color.rgb(47, 119, 84), () -> choose("Ничья"));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1);
+        bp.setMargins(0, 0, dp(5), 0); choices.addView(player, bp);
+        LinearLayout.LayoutParams bp2 = new LinearLayout.LayoutParams(0, -2, 1);
+        bp2.setMargins(dp(2), 0, dp(2), 0); choices.addView(banker, bp2);
+        LinearLayout.LayoutParams bp3 = new LinearLayout.LayoutParams(0, -2, 1);
+        bp3.setMargins(dp(5), 0, 0, 0); choices.addView(tie, bp3);
+        root.addView(choices);
+        addGap(root, 8);
+
+        root.addView(button("ЗАПИСАТЬ РЕЗУЛЬТАТ РАЗДАЧИ", Color.rgb(173, 128, 42), this::recordResult));
+        addGap(root, 14);
+
+        recommendationView = text("", 17, GOLD, true);
+        recommendationView.setPadding(dp(14), dp(12), dp(14), dp(12));
+        recommendationView.setBackgroundColor(PANEL);
+        root.addView(recommendationView);
+        addGap(root, 8);
+        statusView = text("Выбери сумму и вариант ставки. После раздачи внеси фактический результат.", 14, WHITE, false);
+        root.addView(statusView);
+        addGap(root, 12);
+
+        root.addView(text("СТАТИСТИКА", 17, GOLD, true));
+        statsView = text("", 14, WHITE, false);
+        root.addView(statsView);
+        addGap(root, 12);
+
+        root.addView(text("ИСТОРИЯ РАЗДАЧ", 17, GOLD, true));
+        historyView = text("Пока раздач нет.", 14, WHITE, false);
+        root.addView(historyView);
+        addGap(root, 12);
+        root.addView(button("СБРОСИТЬ СЕССИЮ", Color.rgb(75, 79, 76), this::resetSession));
+
+        setContentView(scroll);
+        updatePanels();
+    }
+
+    private String money(double v) { return String.format(Locale.US, "%.0f", v); }
+
+    private void choose(String option) {
+        selectedBet = option;
+        String raw = amountInput.getText().toString().trim();
+        try { pendingBet = Double.parseDouble(raw); }
+        catch (Exception e) { pendingBet = 0; }
+        if (pendingBet <= 0 || pendingBet > balance) {
+            statusView.setText("Укажи положительную сумму, не превышающую текущий баланс.");
+            return;
+        }
+        statusView.setText("Выбрана ставка: " + option + " на " + money(pendingBet) + ". После раздачи нажми фактический результат.");
+    }
+
+    private void recordResult() {
+        if (history.size() >= 500) {
+            statusView.setText("Достигнут лимит истории в этой сессии.");
+            return;
+        }
+        final String[] options = {"Игрок", "Банкир", "Ничья"};
+        new AlertDialog.Builder(this)
+            .setTitle("Как закончилась раздача?")
+            .setItems(options, (dialog, which) -> settle(options[which]))
+            .setNegativeButton("Отмена", null)
+            .show();
+    }
+
+    private void settle(String actual) {
+        String line = "#" + (history.size() + 1) + " — " + actual;
+        if (!selectedBet.isEmpty() && pendingBet > 0 && pendingBet <= balance) {
+            if (selectedBet.equals(actual)) {
+                double profit = selectedBet.equals("Ничья") ? pendingBet * 8 : pendingBet;
+                // Simplified demo payout; real baccarat rules and table commissions vary.
+                balance += profit;
+                line += " | ставка " + selectedBet + " +" + money(profit);
+            } else {
+                balance -= pendingBet;
+                line += " | ставка " + selectedBet + " -" + money(pendingBet);
+            }
+        } else {
+            line += " | без рассчитанной ставки";
+        }
+        history.add(0, line);
+        selectedBet = "";
+        pendingBet = 0;
+        updatePanels();
+        statusView.setText("Результат записан. Это статистический журнал, а не прогноз следующей раздачи.");
+    }
+
+    private void updatePanels() {
+        if (balanceView != null) balanceView.setText("Баланс: " + money(balance));
+        int p = 0, b = 0, t = 0;
+        for (String item : history) {
+            if (item.contains("— Игрок")) p++;
+            else if (item.contains("— Банкир")) b++;
+            else if (item.contains("— Ничья")) t++;
+        }
+        if (statsView != null) {
+            int total = history.size();
+            statsView.setText("Всего раздач: " + total + "\nИгрок: " + p + " • Банкир: " + b + " • Ничья: " + t
+                + "\n\nМатематическая справка (типичная стандартная игра): победа Банкира около 45,9%, Игрока около 44,6%, Ничья около 9,5%. Точные значения зависят от правил и не учитывают комиссию/выплаты конкретного стола.");
+        }
+        if (recommendationView != null) {
+            recommendationView.setText("ПОДСКАЗКА\nПо одной истории нельзя надёжно определить следующую раздачу. В стандартной баккара у Банкира обычно немного выше вероятность победы, но учитывай комиссию и выплаты. Это не персональный прогноз.");
+        }
+        if (historyView != null) {
+            if (history.isEmpty()) historyView.setText("Пока раздач нет.");
+            else {
+                StringBuilder s = new StringBuilder();
+                int max = Math.min(20, history.size());
+                for (int i = 0; i < max; i++) s.append(history.get(i)).append("\n");
+                if (history.size() > max) s.append("… ещё ").append(history.size() - max).append(" раздач");
+                historyView.setText(s.toString());
+            }
+        }
+    }
+
+    private void resetSession() {
+        new AlertDialog.Builder(this)
+            .setTitle("Сбросить сессию?")
+            .setMessage("Баланс вернётся к 10 000, история очистится.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Сбросить", (d, w) -> {
+                balance = 10000; pendingBet = 0; selectedBet = ""; history.clear(); render();
+            }).show();
+    }
+}
